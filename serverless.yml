@@ -1,0 +1,60 @@
+service: lambda-ping
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  region: eu-west-3
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "cloudwatch:PutMetricData"
+      Resource: "*"
+
+functions:
+  ping:
+    handler: ping.handler
+    description: "Perform an HTTP request to 'ping' a remote server to determine availablity"
+    memorySize: 128
+    timeout: 30
+    events:
+      - schedule:
+          name: lambda-ping-5min
+          description: 'Ping HTTP endpoints every 1 minute'
+          rate: rate(1 minute)
+          enabled: true
+          input:
+            - 'https://www.google.com'
+  notify:
+    handler: notify.handler
+    description: "Notify on CloudWatch alarms"
+    memorySize: 128
+    events:
+      - sns:
+          arn: !Ref CloudWatchAlarmsTopic
+          topicName: cloudwatch-ping-alarms
+
+resources:
+  Resources:
+    CloudWatchAlarmsTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: cloudwatch-ping-alarms
+
+    CloudWatchAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmActions:
+          - !Ref CloudWatchAlarmsTopic
+        AlarmName: "Lambda-Ping Latency"
+        ComparisonOperator: GreaterThanThreshold
+        Dimensions:
+          - Name: "Endpoint"
+            Value: "https://www.google.com"
+        EvaluationPeriods: 1
+        MetricName: Latency
+        Namespace: "Lambda-Ping/HTTP"
+        Period: 60
+        Statistic: "Average"
+        Threshold: '100.00'
+        TreatMissingData: "breaching"
+        Unit: "Milliseconds"
